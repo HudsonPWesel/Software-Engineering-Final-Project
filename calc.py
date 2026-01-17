@@ -1,63 +1,105 @@
-#  Fetch from DB of all metro pops
-# GPS coords
-from geopy.distance import great_circle
-from timezonefinder import TimezoneFinder
 import json
-import typing
-import requests
+import csv
 
-PERCENT_OF_FLYERS = 0.005
-MARKET_SHARE = 0.02
+# import requests
+from geopy.distance import great_circle
+
+# API_TOKEN = "7c9a792f46b1b7c63b174cc811c45a6ec439e49d3ab497be5c174636b9382bc50346678f6ef0810492fa9f28ce62068c"
 
 icao_codes = [
-    "KATL",  # Atlanta
-    "KDFW",  # Dallas/Fort Worth
-    "KDEN",  # Denver
-    "KORD",  # Chicago O'Hare
-    "KLAX",  # Los Angeles
-    "KJFK",  # New York JFK
-    "KCLT",  # Charlotte
-    "KLAS",  # Las Vegas
-    "KMCO",  # Orlando
-    "KMIA",  # Miami
-    "KPHX",  # Phoenix
-    "KSEA",  # Seattle-Tacoma
-    "KSFO",  # San Francisco
-    "KEWR",  # Newark
-    "KIAH",  # Houston Intercontinental
-    "KBOS",  # Boston Logan
-    "KMSP",  # Minneapolis–Saint Paul
-    "KFLL",  # Fort Lauderdale
-    "KLGA",  # New York LaGuardia
-    "KDTW",  # Detroit
-    "KPHL",  # Philadelphia
-    "KSLC",  # Salt Lake City
-    "KBWI",  # Baltimore/Washington
-    "KIAD",  # Washington Dulles
-    "KSAN",  # San Diego
-    "KDCA",  # Reagan National
-    "KTPA",  # Tampa
-    "KBNA",  # Nashville
-    "KAUS",  # Austin
-    "PHNL",  # Honolulu (note: Hawaii uses PH, not K)
+    "KATL",
+    "KDFW",
+    "KDEN",
+    "KORD",
+    "KLAX",
+    "KJFK",
+    "KCLT",
+    "KLAS",
+    "KMCO",
+    "KMIA",
+    "KPHX",
+    "KSEA",
+    "KSFO",
+    "KEWR",
+    "KIAH",
+    "KBOS",
+    "KMSP",
+    "KFLL",
+    "KLGA",
+    "KDTW",
+    "KPHL",
+    "KSLC",
+    "KBWI",
+    "KIAD",
+    "KSAN",
+    "KDCA",
+    "KTPA",
+    "KBNA",
+    "KAUS",
+    "PHNL",
 ]
 
 
+# def fetch_airports(codes: list[str]) -> dict:
+#     data = {}
+#     for icao in codes:
+#         url = f"https://airportdb.io/api/v1/airport/{icao}?apiToken={API_TOKEN}"
+#         request = requests.get(url, timeout=30)
+#         data[icao] = request.json()
+#      airports = fetch_airports(icao_codes)
+
+#      with open("airports.json", "w") as f:
+#      f.write(json.dumps(airports))
+
+#     return data
+
+
 def main():
-    # print(airports["iata"])
-    data = {}
-    for airport in icao_codes:
-        response = requests.get(
-            f"https://airportdb.io/api/v1/airport/{airport}?apiToken=7c9a792f46b1b7c63b174cc811c45a6ec439e49d3ab497be5c174636b9382bc50346678f6ef0810492fa9f28ce62068c"
+
+    with open("airports.json", "r") as f:
+        airports = json.load(f)
+    calculate_distances(airports)
+
+
+def calculate_distances(airports: dict) -> None:
+    distances: dict = {}
+    airport_coords: list[tuple] = []
+
+    for airport, airport_data in airports.items():
+        if not latitude or not longitude:
+            print(
+                f"[-] Unable fetch GPS data for {airport}"
+            )  # May want to throw an err here but since we're jsut processing data idc
+        icao, latitude, longitude = (
+            airport,
+            airport_data.get("latitude_deg"),
+            airport_data.get("longitude_deg"),
         )
-        print(response.json())
-        data[airport] = response.json()
 
-    with open("airports.json", "w") as f:
-        f.write(json.dumps(data))
+        airport_coords.append((icao, latitude, longitude))
 
-    # print(airports)
-    is_reachable_airport()
+    print(airport_coords)
+
+    with open(
+        "distances.csv",
+        "w",
+    ) as f:
+        writer = csv.writer(f)
+        writer.writerow([""] + icao_codes)
+        for source_airport, *source_airport_coords in airport_coords:
+            distances[source_airport] = [
+                (
+                    round(
+                        great_circle(source_airport_coords, dest_airport_coords).miles,
+                        5,
+                    )
+                    if source_airport != dest_airport
+                    else 0.00
+                )
+                for dest_airport, *dest_airport_coords in airport_coords
+            ]
+
+            writer.writerow([source_airport] + distances[source_airport])
 
 
 # Filter by reachable airports (more than 150 miles apart & operates when landing)
@@ -86,3 +128,6 @@ def calc_number_of_flyers(
 
 main()
 # print(calc_number_of_flyers(1_000_000, 10_000_000, 175_000_000))
+
+if __name__ == "__main__":
+    main()
