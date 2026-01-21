@@ -1,64 +1,65 @@
 import json
 import csv
+import os
+import requests
+from datetime import datetime
+import zoneinfo
+from geopy.distance import great_circle  # type: ignore
 
 # import requests
-from geopy.distance import great_circle
+API_TOKEN = "7c9a792f46b1b7c63b174cc811c45a6ec439e49d3ab497be5c174636b9382bc50346678f6ef0810492fa9f28ce62068c"
 
-# API_TOKEN = "7c9a792f46b1b7c63b174cc811c45a6ec439e49d3ab497be5c174636b9382bc50346678f6ef0810492fa9f28ce62068c"
+PERCENT_OF_FLYERS: float = 0.005
+MARKET_SHARE: float = 0.5
 
-icao_codes = [
-    "KATL",
-    "KDFW",
-    "KDEN",
-    "KORD",
-    "KLAX",
-    "KJFK",
-    "KCLT",
-    "KLAS",
-    "KMCO",
-    "KMIA",
-    "KPHX",
-    "KSEA",
-    "KSFO",
-    "KEWR",
-    "KIAH",
-    "KBOS",
-    "KMSP",
-    "KFLL",
-    "KLGA",
-    "KDTW",
-    "KPHL",
-    "KSLC",
-    "KBWI",
-    "KIAD",
-    "KSAN",
-    "KDCA",
-    "KTPA",
-    "KBNA",
-    "KAUS",
-    "PHNL",
-]
-
-
-# def fetch_airports(codes: list[str]) -> dict:
-#     data = {}
-#     for icao in codes:
-#         url = f"https://airportdb.io/api/v1/airport/{icao}?apiToken={API_TOKEN}"
-#         request = requests.get(url, timeout=30)
-#         data[icao] = request.json()
-#      airports = fetch_airports(icao_codes)
-
-#      with open("airports.json", "w") as f:
-#      f.write(json.dumps(airports))
-
-#     return data
+icao_to_timezone = {
+    "KATL": "America/New_York",
+    "KDFW": "America/Chicago",
+    "KDEN": "America/Denver",
+    "KORD": "America/Chicago",
+    "KLAX": "America/Los_Angeles",
+    "KJFK": "America/New_York",
+    "KCLT": "America/New_York",
+    "KLAS": "America/Los_Angeles",  # Follows Pacific Time of las_vegas
+    "KMCO": "America/New_York",
+    "KMIA": "America/New_York",
+    "KPHX": "America/Phoenix",  # no DST
+    "KSEA": "America/Los_Angeles",
+    "KSFO": "America/Los_Angeles",
+    "KEWR": "America/New_York",
+    "KIAH": "America/Chicago",
+    "KBOS": "America/New_York",
+    "KMSP": "America/Chicago",
+    "KFLL": "America/New_York",
+    "KLGA": "America/New_York",
+    "KDTW": "America/New_York",
+    "KPHL": "America/New_York",
+    "KSLC": "America/Denver",
+    "KBWI": "America/New_York",
+    "KIAD": "America/New_York",
+    "KSAN": "America/Los_Angeles",
+    "KDCA": "America/New_York",
+    "KTPA": "America/New_York",
+    "KBNA": "America/Chicago",
+    "KAUS": "America/Chicago",
+    "PHNL": "Pacific/Honolulu",  # Hawaii
+    "LFPG": "Europe/Paris",  # Charles de Gaulle
+}
 
 
 def main():
+    airports = None
+    if os.path.isfile("./airports.json"):
+        with open("airports.json", "r") as f:
+            airports = json.load(f)
+    else:
+        with open("airports.json", "w") as f:
+            airports = fetch_airports(list(icao_to_timezone.keys()))
 
-    with open("airports.json", "r") as f:
-        airports = json.load(f)
     calculate_distances(airports)
+
+    for key in icao_to_timezone.values():
+        get_time_of_city(key)
 
 
 def calculate_distances(airports: dict) -> None:
@@ -66,26 +67,23 @@ def calculate_distances(airports: dict) -> None:
     airport_coords: list[tuple] = []
 
     for airport, airport_data in airports.items():
-        if not latitude or not longitude:
-            print(
-                f"[-] Unable fetch GPS data for {airport}"
-            )  # May want to throw an err here but since we're jsut processing data idc
         icao, latitude, longitude = (
             airport,
             airport_data.get("latitude_deg"),
             airport_data.get("longitude_deg"),
         )
 
-        airport_coords.append((icao, latitude, longitude))
+        if not airport_data or not longitude:
+            raise ValueError(f"[-] Unable fetch GPS data for {airport}")
 
-    print(airport_coords)
+        airport_coords.append((icao, latitude, longitude))
 
     with open(
         "distances.csv",
         "w",
     ) as f:
         writer = csv.writer(f)
-        writer.writerow([""] + icao_codes)
+        writer.writerow([""] + list(icao_to_timezone.keys()))
         for source_airport, *source_airport_coords in airport_coords:
             distances[source_airport] = [
                 (
@@ -97,21 +95,28 @@ def calculate_distances(airports: dict) -> None:
                     else 0.00
                 )
                 for dest_airport, *dest_airport_coords in airport_coords
+                # Filter by reachable airports (more than 150 miles apart & operates when landing)
             ]
 
             writer.writerow([source_airport] + distances[source_airport])
 
 
-# Filter by reachable airports (more than 150 miles apart & operates when landing)
+def is_reachable_airport(source_coords: tuple, destination_coords): ...
 
 
-def is_reachable_airport():
-    obj = TimezoneFinder()
-    tf = TimezoneFinder(in_memory=True)
-    query_points = [(13.358, 52.5061)]
-    for lng, lat in query_points:
-        tz = tf.timezone_at(lng=lng, lat=lat)
-        print(tz)
+"""
+Format of timezone expected : "America/New_York" | "Europe/Paris"
+"""
+
+
+def get_time_of_city(iana_time_zone: str):
+    local_timezone = zoneinfo.ZoneInfo(iana_time_zone)
+    local_time = datetime.now(local_timezone)
+    print(f"Time in ({iana_time_zone.split('\/')[-1]}) : ", end="")
+    print(
+        local_time.strftime("%Y-%m-%d %H:%M:%S ")
+    )  # Could add %Z timezone zone (e.g UTC,EST), %z outputs the UTC Offset
+    return local_time
 
 
 def calc_number_of_flyers(
@@ -124,6 +129,19 @@ def calc_number_of_flyers(
 
     dest_share = dest_metro_pop / total_reachable_pop_excluding_source
     return panther_flyers * dest_share
+
+
+def fetch_airports(icao_to_timezone: list[str]) -> dict:
+    data = {}
+    for icao in icao_to_timezone:
+        url = f"https://airportdb.io/api/v1/airport/{icao}?apiToken={API_TOKEN}"
+        print(f"[+] Fetching {icao} ({url})")
+        request = requests.get(url, timeout=30)
+        data[icao] = request.json()
+
+    with open("airports.json", "w") as f:
+        f.write(json.dumps(data))
+    return data
 
 
 main()
