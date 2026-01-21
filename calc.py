@@ -15,7 +15,7 @@ PERCENT_OF_FLYERS: float = 0.005
 MARKET_SHARE: float = 0.5
 MIN_MILES: float = 150.0
 
-icao_to_timezone = {
+ICAO_TO_TIMEZONE = {
     "KATL": "America/New_York",
     "KDFW": "America/Chicago",
     "KDEN": "America/Denver",
@@ -48,8 +48,7 @@ icao_to_timezone = {
     "PHNL": "Pacific/Honolulu",  # Hawaii
     "LFPG": "Europe/Paris",  # Charles de Gaulle
 }
-
-icao_to_metro_population: dict[str, float] = {
+ICAO_TO_METRO_POPULATION: dict[str, float] = {
     "KATL": 6_300_000,  # Atlanta
     "KDFW": 7_900_000,  # Dallas–Fort Worth
     "KDEN": 3_000_000,  # Denver
@@ -83,38 +82,33 @@ icao_to_metro_population: dict[str, float] = {
     "LFPG": 13_000_000,  # Paris metro
 }
 
-distances: dict[str, dict[str, float]] = {}
-
 
 def main() -> None:
-    load_data()
-    get_total_reachable_airport_populations()
+    airports = load_data(
+        "airports.json", lambda: fetch_airports(list(ICAO_TO_TIMEZONE.keys()))
+    )
 
-    # for key in icao_to_timezone.values():
+    # FIXME: Passing data to every calc
+
+    distances = load_data("distances.json", lambda: calculate_distances(airports))
+    calc_number_of_flyers(distances)
+
+    # for key in ICAO_TO_TIMEZONE.values():
     #     get_time_of_city(key)
 
 
-def load_data() -> None:
-    airports = None
-    if os.path.isfile("airports.json"):
-        with open("./airports.json", "r") as f:
-            airports = json.load(f)
-            # print(airports)
-    else:
-        with open("airports.json", "w") as f:
-            airports = fetch_airports(list(icao_to_timezone.keys()))
-
-    if os.path.isfile("./distances.json"):  # FIXME: ONLY FIRES IF NOT distances.json
-        with open("./distances.json", "r") as f:
-            distances = json.load(f)
-    else:
-        with open("distances.json", "w") as f:
-            calculate_distances(airports)
+def load_data(filename: str, build_func) -> dict[str, dict[str, float]]:
+    if os.path.isfile(filename):
+        with open(filename, "r") as f:
+            return json.load(f)
+    data = build_func()
+    with open(filename, "w") as f:
+        json.dump(data, f)
+    return data
 
 
-def calculate_distances(airports: dict) -> None:
+def calculate_distances(airports: dict) -> dict:
     airport_coords: list[tuple] = []
-
     distances_csv: dict = {}
     distances_json: dict[str, dict[str, float]] = defaultdict(dict)
 
@@ -134,8 +128,9 @@ def calculate_distances(airports: dict) -> None:
         "distances.csv",
         "w",
     ) as f:
+        # TODO: This should be exported but I'm too lazy
         writer = csv.writer(f)
-        writer.writerow([""] + list(icao_to_timezone.keys()))
+        writer.writerow([""] + list(ICAO_TO_TIMEZONE.keys()))
 
         for source_airport, *source_airport_coords in airport_coords:
             row: list[Union[float, str]] = []
@@ -156,11 +151,7 @@ def calculate_distances(airports: dict) -> None:
 
             distances_csv[source_airport] = row
             writer.writerow([source_airport] + row)
-
-    # TODO: Had werid problems checking with OS path
-    with open("./distances.json", "w") as f:
-        print(distances_json)
-        f.write(json.dumps(distances_json))
+    return distances_json
 
 
 """
@@ -178,55 +169,67 @@ def get_time_of_city(iana_time_zone: str) -> datetime:
     return local_time
 
 
-def get_total_reachable_airport_populations():
-    for source_airport_name, *dest_airport in distances.items():
-        print(f"{source_airport_name} -> {list(dest_airport.keys())[0]}")
+def calculate_total_reachable_airport_populations(
+    source_airport_name: str,
+    distances: dict[str, dict[str, float]],
+) -> float:
+    # TODO: FILTER for reachable using distances and time
+    populations_counter: float = 0.0
+    for dest_airport_name, dest_airport_distance in distances.items():
+        if dest_airport_distance.get(source_airport_name, 0) > 150:
+            populations_counter += ICAO_TO_METRO_POPULATION[dest_airport_name]
+    print(f"[+] Total Population from {source_airport_name} : {populations_counter}")
+
+    return populations_counter
 
 
+# TODO: Make return in JSON format like with distances
 def calc_number_of_flyers(
-    source_metro_pop: float,
-    dest_metro_pop: float,
-    total_reachable_pop_excluding_source: float,
+    airport_distances: dict[str, dict[str, float]],
 ):
-    flyers: dict = {}
-
     with open(
         "travelers.csv",
         "w",
     ) as f:
         writer = csv.writer(f)
-        writer.writerow([""] + list(icao_to_metro_population.keys()))
-        for source_city, dest_metro_population in icao_to_metro_population.items():
-            row: list[Union[float]] = []
-            for dest_city, dest_metro_population in icao_to_metro_population.items():
-                if source_city == dest_city:
-                    row.append(0.00)
-                    continue
-                else:
-                    daily_flyers = source_metro_pop * PERCENT_OF_FLYERS
+        writer.writerow([""] + list(ICAO_TO_METRO_POPULATION.keys()))
+
+        for (
+            source_city_name,
+            source_city_population,
+        ) in ICAO_TO_METRO_POPULATION.items():
+            total_reachable_population = calculate_total_reachable_airport_populations(
+                source_city_name,
+                airport_distances,
+            )
+            row: list[int] = []
+            for (
+                distination_city_name,
+                destination_city_population,
+            ) in ICAO_TO_METRO_POPULATION.items():
+                if source_city_name != distination_city_name:
+                    daily_flyers = source_city_population * PERCENT_OF_FLYERS
                     panther_flyers = daily_flyers * MARKET_SHARE
                     dest_share = (
-                        dest_metro_pop / get_total_reachable_airport_populations()
+                        destination_city_population / total_reachable_population
                     )
-                    return panther_flyers * dest_share
-                    row[source_city] = row
-        writer.writerow([source_city] + row)
+                    row.append(round(panther_flyers * dest_share))
+                else:
+                    row.append(0)
+            writer.writerow([source_city_name] + row)
 
 
-def fetch_airports(icao_to_timezone: list[str]) -> dict:
-    data = {}
-    for icao in icao_to_timezone:
+def fetch_airports(ICAO_TO_TIMEZONE: list[str]) -> dict:
+    airline_data = {}
+    for icao in ICAO_TO_TIMEZONE:
         url = f"https://airportdb.io/api/v1/airport/{icao}?apiToken={API_TOKEN}"
         print(f"[+] Fetching {icao} ({url})")
         request = requests.get(url, timeout=30)
-        data[icao] = request.json()
+        airline_data[icao] = request.json()
 
-    with open("airports.json", "w") as f:
-        f.write(json.dumps(data))
-    return data
+    return airline_data
 
 
-main()
 # print(calc_number_of_flyers(1_000_000, 10_000_000, 175_000_000))
 
 if __name__ == "__main__":
