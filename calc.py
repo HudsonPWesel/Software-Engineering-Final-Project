@@ -84,17 +84,44 @@ ICAO_TO_METRO_POPULATION: dict[str, float] = {
 
 
 def main() -> None:
-    airports = load_data(
-        "airports.json", lambda: fetch_airports(list(ICAO_TO_TIMEZONE.keys()))
-    )
+    # airports = load_data(
+    #     "airports.json", lambda: fetch_airports(list(ICAO_TO_TIMEZONE.keys()))
+    # )
 
     # FIXME: Passing data to every calc
 
-    distances = load_data("distances.json", lambda: calculate_distances(airports))
-    calc_number_of_flyers(distances)
+    # distances = load_data("distances.json", lambda: calculate_distances(airports))
+
+    # calc_number_of_flyers(distances)
 
     # for key in ICAO_TO_TIMEZONE.values():
     #     get_time_of_city(key)
+
+    get_best_hub_locations()
+
+
+def get_best_hub_locations():
+    counts = defaultdict(int)
+    with open("travelers.csv", "r") as f:
+        counts = defaultdict(int)
+        reader = csv.DictReader(f)
+        for row in reader:
+            for col_name, value in row.items():
+                try:
+                    counts[col_name] += int(value)
+                except:
+                    continue
+
+        with open("hubs.json", "w") as f:
+            json.dump(
+                {
+                    city_name: value
+                    for city_name, value in sorted(
+                        counts.items(), key=lambda x: x[-1], reverse=True
+                    )
+                },
+                f,
+            )
 
 
 def load_data(
