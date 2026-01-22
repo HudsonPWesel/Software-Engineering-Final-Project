@@ -333,7 +333,8 @@
         "station": {
             "icao_code": "KATL",
             "distance": 0
-        }
+        },
+        "is_hub": true
     },
     "KDFW": {
         "ident": "KDFW",
@@ -677,7 +678,8 @@
         "station": {
             "icao_code": "KDFW",
             "distance": 0
-        }
+        },
+        "is_hub": true
     },
     "KDEN": {
         "ident": "KDEN",
@@ -991,7 +993,8 @@
         "station": {
             "icao_code": "KDEN",
             "distance": 0
-        }
+        },
+        "is_hub": true
     },
     "KORD": {
         "ident": "KORD",

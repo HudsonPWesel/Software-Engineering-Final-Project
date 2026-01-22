@@ -1,7 +1,7 @@
 import json
 import csv
 import os
-from typing import Union, TypeVar, Callable, Any
+from typing import Union, Optional, Callable, Any
 import requests
 from datetime import datetime
 import zoneinfo
@@ -14,6 +14,11 @@ API_TOKEN = "7c9a792f46b1b7c63b174cc811c45a6ec439e49d3ab497be5c174636b9382bc5034
 PERCENT_OF_FLYERS: float = 0.005
 MARKET_SHARE: float = 0.5
 MIN_MILES: float = 150.0
+HUBS: set[str] = set()
+
+HUBS.add("KATL")
+HUBS.add("KDFW")
+HUBS.add("KDEN")
 
 ICAO_TO_TIMEZONE = {
     "KATL": "America/New_York",
@@ -84,9 +89,7 @@ ICAO_TO_METRO_POPULATION: dict[str, float] = {
 
 
 def main() -> None:
-    airports = load_data(
-        "airports.json", lambda: fetch_airports(list(ICAO_TO_TIMEZONE.keys()))
-    )
+    airports = load_data("airports.json", fetch_and_mark_airports)
 
     # FIXME: Passing data to every calc
 
@@ -127,11 +130,15 @@ def get_best_hub_locations():
             )
 
 
-def load_data(filename: str, build_func: Callable[[], Any]) -> dict:
+def load_data(
+    filename: str,
+    build_func: Callable[[], dict],
+    post_processs_func: Optional[Callable[[], Any]] = None,
+) -> dict:
     if os.path.isfile(filename):
         with open(filename, "r") as f:
             return json.load(f)
-    data = build_func()
+    data: dict = build_func()
     with open(filename, "w") as f:
         json.dump(data, f)
     return data
@@ -240,7 +247,7 @@ def calculate_total_reachable_airport_populations(
     return populations_counter
 
 
-# TODO: Make return in JSON format like with distances
+# TODO: Make return in JSON format like with distances but our get_best_hubs reads the csv file instead
 def calc_number_of_flyers(
     airport_distances: dict[str, dict[str, float]],
 ):
@@ -276,9 +283,27 @@ def calc_number_of_flyers(
             writer.writerow([source_city_name] + row)
 
 
-def fetch_airports(ICAO_TO_TIMEZONE: list[str]) -> dict:
+"""
+Fetches airport data from random api that uses wikipedia and adds attributes "is_hub" to that data and returns that data as dict to write to airports.json
+"""
+
+
+def fetch_and_mark_airports() -> dict:
+    fetched_airports_data = fetch_airports()
+    return mark_airports_as_hubs(fetched_airports_data)
+
+
+def mark_airports_as_hubs(fetched_airports_data: dict) -> dict:
+    for icao in fetched_airports_data:
+        if icao in HUBS:
+            fetched_airports_data[icao]["is_hub"] = True
+            print(f"[+] Marked {icao} as hub")
+    return fetched_airports_data
+
+
+def fetch_airports() -> dict:
     airline_data = {}
-    for icao in ICAO_TO_TIMEZONE:
+    for icao in ICAO_TO_TIMEZONE.keys():
         url = f"https://airportdb.io/api/v1/airport/{icao}?apiToken={API_TOKEN}"
         print(f"[+] Fetching {icao} ({url})")
         request = requests.get(url, timeout=30)
