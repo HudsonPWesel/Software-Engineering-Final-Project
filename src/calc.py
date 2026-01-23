@@ -9,7 +9,26 @@ import zoneinfo
 from collections import defaultdict
 from geopy.distance import great_circle  # type: ignore
 from geographiclib.geodesic import Geodesic
-from definitions import *
+from definitions import (
+    ANGLE_OF_ASCENSION_IN_DEGREES as ANGLE_OF_ASCENSION_IN_DEGREES,
+    API_TOKEN as API_TOKEN,
+    HUBS as HUBS,
+    KNOTS_TO_FT_PER_MIN as KNOTS_TO_FT_PER_MIN,
+    MARKET_SHARE as MARKET_SHARE,
+    MIN_MILES as MIN_MILES,
+    PERCENT_OF_FLYERS as PERCENT_OF_FLYERS,
+    RATE_OF_DESCEND as RATE_OF_DESCEND,
+    SPEED_IN_KNOTS_TO_DESCEND as SPEED_IN_KNOTS_TO_DESCEND,
+    TURNAROUND_TIME as TURNAROUND_TIME,
+)
+from math_utils import (
+    NMI_TO_FT as NMI_TO_FT,
+    feet_to_nautical_miles as feet_to_nautical_miles,
+    hours_to_minutes as hours_to_minutes,
+    knots_to_ft_per_min as knots_to_ft_per_min,
+    minutes_to_hours as minutes_to_hours,
+    nautical_miles_to_feet as nautical_miles_to_feet,
+)
 
 # import requests
 HUBS.add("KATL")
@@ -123,7 +142,7 @@ def get_best_hub_locations():
             for col_name, value in row.items():
                 try:
                     counts[col_name] += int(value)
-                except:
+                except KeyError:
                     continue
 
         with open("./JSONs/hubs.json", "w") as f:
@@ -317,14 +336,16 @@ def fetch_airports() -> dict:
 
     return airline_data
 
+
 # FIXME:
-def calc_flight_time(source_airport : str, dest_airport : str) -> float:
-    
+def calc_flight_time(source_airport: str, dest_airport: str) -> float:
     # result = Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)
     # initial_bearing = result['azi1']  # Initial bearing in degrees
-    # print(f"Bearing: {initial_bearing:.3f}°")   
+    # print(f"Bearing: {initial_bearing:.3f}°")
+    return -1.0
     ...
-    
+
+
 def calc_time_to_ascend_to_target_height(
     speed_in_knots: float, target_height: float, ground_level: float = 0
 ):
