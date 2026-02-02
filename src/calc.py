@@ -4,101 +4,73 @@ import csv
 import os
 from typing import Union, Optional, Callable, Literal, Any
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import zoneinfo
 from collections import defaultdict
 from geopy.distance import great_circle  # type: ignore
 from geographiclib.geodesic import Geodesic
-from definitions import *
+from definitions import (
+    ACCELERATION_RATE_AT_CRUISING as ACCELERATION_RATE_AT_CRUISING,
+    AIRCRAFT_ASCEND_ANGLE_IN_DEGREES as AIRCRAFT_ASCEND_ANGLE_IN_DEGREES,
+    ANGLE_OF_ASCENSION_IN_DEGREES as ANGLE_OF_ASCENSION_IN_DEGREES,
+    API_TOKEN as API_TOKEN,
+    DISTANCE_IN_NM_TO_10000FT as DISTANCE_IN_NM_TO_10000FT,
+    DISTANCE_TRAVELED_WHILE_ACCEL_TO_280KT as DISTANCE_TRAVELED_WHILE_ACCEL_TO_280KT,
+    HUBS as HUBS,
+    ICAO_TO_METRO_POPULATION as ICAO_TO_METRO_POPULATION,
+    ICAO_TO_TIMEZONE as ICAO_TO_TIMEZONE,
+    KNOTS_TO_FT_PER_MIN as KNOTS_TO_FT_PER_MIN,
+    MARKET_SHARE as MARKET_SHARE,
+    MIN_MILES as MIN_MILES,
+    PERCENT_OF_FLYERS as PERCENT_OF_FLYERS,
+    RATE_OF_ASCEND_IN_MIN_AT_280KT as RATE_OF_ASCEND_IN_MIN_AT_280KT,
+    RATE_OF_DESCEND as RATE_OF_DESCEND,
+    REFUEL_TIME as REFUEL_TIME,
+    SPEED_IN_KNOTS_AT_CRUISING as SPEED_IN_KNOTS_AT_CRUISING,
+    SPEED_IN_KNOTS_TO_DESCEND as SPEED_IN_KNOTS_TO_DESCEND,
+    TIME_TO_10000FT as TIME_TO_10000FT,
+    TIME_TO_ACCEL_TO_280KT as TIME_TO_ACCEL_TO_280KT,
+    TIME_TO_LIFTOFF as TIME_TO_LIFTOFF,
+    TIME_TO_STOP as TIME_TO_STOP,
+    TURNAROUND_TIME as TURNAROUND_TIME,
+    TIME_TO_DESCEND_TO_GROUND as TIME_TO_DESCEND_TO_GROUND,
+    WESTBOUND_TIME_MULTIPLIER as WESTBOUND_TIME_MULTIPLIER,
+    METERS_PER_NM as METERS_PER_NM,
+)
 from math_utils import (
-    NMI_TO_FT as NMI_TO_FT,
+    NM_TO_FT as NM_TO_FT,
+    distance_for_minutes as distance_for_minutes,
     feet_to_nautical_miles as feet_to_nautical_miles,
     hours_to_minutes as hours_to_minutes,
     knots_to_ft_per_min as knots_to_ft_per_min,
+    math as math,
+    minutes_for_distance as minutes_for_distance,
     minutes_to_hours as minutes_to_hours,
     nautical_miles_to_feet as nautical_miles_to_feet,
 )
 
-# import requests
-HUBS.add("KATL")
-HUBS.add("KDFW")
-HUBS.add("KDEN")
-
-ICAO_TO_TIMEZONE = {
-    "KATL": "America/New_York",
-    "KDFW": "America/Chicago",
-    "KDEN": "America/Denver",
-    "KORD": "America/Chicago",
-    "KLAX": "America/Los_Angeles",
-    "KJFK": "America/New_York",
-    "KCLT": "America/New_York",
-    "KLAS": "America/Los_Angeles",  # Follows Pacific Time of las_vegas
-    "KMCO": "America/New_York",
-    "KMIA": "America/New_York",
-    "KPHX": "America/Phoenix",  # no DST
-    "KSEA": "America/Los_Angeles",
-    "KSFO": "America/Los_Angeles",
-    "KEWR": "America/New_York",
-    "KIAH": "America/Chicago",
-    "KBOS": "America/New_York",
-    "KMSP": "America/Chicago",
-    "KFLL": "America/New_York",
-    "KLGA": "America/New_York",
-    "KDTW": "America/New_York",
-    "KPHL": "America/New_York",
-    "KSLC": "America/Denver",
-    "KBWI": "America/New_York",
-    "KIAD": "America/New_York",
-    "KSAN": "America/Los_Angeles",
-    "KDCA": "America/New_York",
-    "KTPA": "America/New_York",
-    "KBNA": "America/Chicago",
-    "KAUS": "America/Chicago",
-    "PHNL": "Pacific/Honolulu",  # Hawaii
-    "LFPG": "Europe/Paris",  # Charles de Gaulle
-}
-ICAO_TO_METRO_POPULATION: dict[str, float] = {
-    "KATL": 6_300_000,  # Atlanta
-    "KDFW": 7_900_000,  # Dallas–Fort Worth
-    "KDEN": 3_000_000,  # Denver
-    "KORD": 9_500_000,  # Chicago
-    "KLAX": 13_200_000,  # Los Angeles
-    "KJFK": 20_200_000,  # New York City
-    "KCLT": 2_800_000,  # Charlotte
-    "KLAS": 2_300_000,  # Las Vegas
-    "KMCO": 2_700_000,  # Orlando
-    "KMIA": 6_200_000,  # Miami–Fort Lauderdale
-    "KPHX": 5_100_000,  # Phoenix
-    "KSEA": 4_100_000,  # Seattle
-    "KSFO": 7_800_000,  # San Francisco Bay Area
-    "KEWR": 20_200_000,  # NYC metro
-    "KIAH": 7_300_000,  # Houston
-    "KBOS": 5_000_000,  # Boston
-    "KMSP": 3_700_000,  # Minneapolis–St. Paul
-    "KFLL": 6_200_000,  # Miami–Fort Lauderdale
-    "KLGA": 20_200_000,  # NYC metro
-    "KDTW": 4_300_000,  # Detroit
-    "KPHL": 6_200_000,  # Philadelphia
-    "KSLC": 1_300_000,  # Salt Lake City
-    "KBWI": 6_200_000,  # Baltimore–Washington
-    "KIAD": 6_200_000,  # Washington DC metro
-    "KSAN": 3_300_000,  # San Diego
-    "KDCA": 6_200_000,  # Washington DC metro
-    "KTPA": 3_200_000,  # Tampa Bay
-    "KBNA": 2_000_000,  # Nashville
-    "KAUS": 2_400_000,  # Austin
-    "PHNL": 1_000_000,  # Honolulu
-    "LFPG": 13_000_000,  # Paris metro
-}
-
 
 def main() -> None:
+    HUBS.add("KATL")
+    HUBS.add("KDFW")
+    HUBS.add("KDEN")
+
     airports = load_data("./JSONs/airports.json", fetch_and_mark_airports)
+    airport_coords: dict[str, dict] = {}
 
-    # FIXME: Passing data to every calc
+    for airport, airport_data in airports.items():
+        icao, latitude, longitude = (
+            airport,
+            airport_data.get("latitude_deg"),
+            airport_data.get("longitude_deg"),
+        )
 
+        if not latitude or not longitude:
+            raise ValueError(f"[-] Unable fetch GPS data for {airport}")
+
+        airport_coords[icao] = {"latitude_deg": latitude, "longitude_deg": longitude}
     distances = load_data(
-        "./JSONs/distances.json", lambda: calculate_distances(airports)
+        "./JSONs/distances.json", lambda: calc_distances(airport_coords)
     )
 
     calc_number_of_flyers(distances)
@@ -110,16 +82,9 @@ def main() -> None:
     taxi_times: dict[str, float] = load_data(
         "./JSONs/taxi-times.json", lambda: calc_taxi_time(airports)
     )
+    temp_airplane_specs = {"cruising_altitude": 38000, "max_speed": 470}
 
-    calc_time_to_ascend_to_target_height(250, 10_000)
-    calc_time_to_descend_to_ten_thousand(38000)
-
-
-# calc_time_to_ascend_to_target_height(250, 20_000, 10000)
-# calc_time_to_ascend_to_target_height(250, 25_000, 10000)
-# calc_time_to_ascend_to_target_height(250, 30_000, 10000)
-# calc_time_to_ascend_to_target_height(250, 35_000, 10000)
-# calc_time_to_ascend_to_target_height(250, 38_000, 10000)
+    calc_flight_times(airport_coords, taxi_times, temp_airplane_specs)
 
 
 def get_best_hub_locations():
@@ -160,40 +125,149 @@ def load_data(
     return data
 
 
-def calculate_distances(airports: dict) -> dict:
-    airport_coords: list[tuple] = []
+# ASSUMES DEST_AIRPORT IS NOT FULL
+
+
+def minutes_to_hhmmss(total_minutes: float) -> str:
+    return str(timedelta(seconds=round(total_minutes * 60)))
+
+
+def calc_flight_times(
+    airport_coords: dict,
+    taxi_times: dict,
+    airplane_specs: dict,
+) -> float:
+    with (
+        open("./CSVs/times.csv", "w", newline="") as f_min,
+        open("./CSVs/human_times.csv", "w", newline="") as f_hms,
+    ):
+        w_min = csv.writer(f_min)
+        w_hms = csv.writer(f_hms)
+
+        header = [""] + list(ICAO_TO_TIMEZONE.keys())
+        w_min.writerow(header)
+        w_hms.writerow(header)
+
+        for source_airport in airport_coords:
+            row_min: list[float] = []
+            row_hms: list[str] = []
+
+            for dest_airport in airport_coords:
+                if source_airport == dest_airport:
+                    row_min.append(0.0)
+                    row_hms.append("00:00:00")
+                    continue
+
+                leg_distance_nm, initial_bearing_deg = geodesic_distance_and_bearing_nm(
+                    airport_coords, source_airport, dest_airport
+                )
+
+                must_refuel = False  # TODO: Change
+                total_time_min: float = TURNAROUND_TIME + (
+                    REFUEL_TIME if must_refuel else 0.0
+                )
+
+                total_time_min += TIME_TO_LIFTOFF + TIME_TO_10000FT
+
+                climb_distance_nm, climb_time_min = calc_time_and_distance_to_cruising(
+                    airplane_specs["cruising_altitude"]
+                )
+                total_time_min += climb_time_min
+
+                descent_dist_nm, descent_time_min = (
+                    calc_time_and_distance_from_cruising(
+                        airplane_specs["cruising_altitude"]
+                    )
+                )
+
+                accel_time_min = (
+                    airplane_specs["max_speed"] - SPEED_IN_KNOTS_AT_CRUISING
+                ) / ACCELERATION_RATE_AT_CRUISING
+
+                accel_dist_nm = distance_for_minutes(
+                    accel_time_min,
+                    (SPEED_IN_KNOTS_AT_CRUISING + airplane_specs["max_speed"]) / 2.0,
+                )
+
+                remaining_distance_nm = (
+                    leg_distance_nm
+                    - climb_distance_nm
+                    - accel_dist_nm
+                    - descent_dist_nm
+                )
+
+                cruise_time_min = minutes_for_distance(
+                    remaining_distance_nm, airplane_specs["max_speed"] * 0.8
+                )
+
+                total_time_min += accel_time_min + cruise_time_min
+                total_time_min += (
+                    descent_time_min + TIME_TO_STOP + taxi_times[dest_airport]
+                )
+
+                initial_bearing_deg = initial_bearing_deg % 360.0
+                is_westbound = 180.0 <= initial_bearing_deg < 360.0
+                if is_westbound:
+                    total_time_min *= WESTBOUND_TIME_MULTIPLIER
+
+                total_time_min = round(total_time_min, 2)
+
+                row_min.append(total_time_min)
+                row_hms.append(minutes_to_hhmmss(total_time_min))
+
+            w_min.writerow([source_airport] + row_min)
+            w_hms.writerow([source_airport] + row_hms)
+
+    return -1.0
+
+
+def geodesic_distance_and_bearing_nm(
+    airport_coords: dict,
+    source_airport: str,
+    dest_airport: str,
+) -> tuple[float, float]:
+    lat1 = airport_coords[source_airport]["latitude_deg"]
+    lon1 = airport_coords[source_airport]["longitude_deg"]
+    lat2 = airport_coords[dest_airport]["latitude_deg"]
+    lon2 = airport_coords[dest_airport]["longitude_deg"]
+
+    r = Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)
+    distance_nm = r["s12"] / METERS_PER_NM
+    bearing_deg = r["azi1"] % 360.0
+    return distance_nm, bearing_deg
+
+
+def calc_distances(airport_coords: dict) -> dict:
     distances_csv: dict = {}
     distances_json: dict[str, dict[str, float]] = defaultdict(dict)
-
-    for airport, airport_data in airports.items():
-        icao, latitude, longitude = (
-            airport,
-            airport_data.get("latitude_deg"),
-            airport_data.get("longitude_deg"),
-        )
-
-        if not latitude or not longitude:
-            raise ValueError(f"[-] Unable fetch GPS data for {airport}")
-
-        airport_coords.append((icao, latitude, longitude))
 
     with open(
         "./CSVs/distances.csv",
         "w",
     ) as f:
-        # TODO: This should be exported but I'm too lazy
+        # TODO: This should be exported to a func but I'm too lazy
         writer = csv.writer(f)
         writer.writerow([""] + list(ICAO_TO_TIMEZONE.keys()))
-
-        for source_airport, *source_airport_coords in airport_coords:
+        for source_airport, source_coords in airport_coords.items():
+            source_airport_coords = (
+                source_coords["latitude_deg"],
+                source_coords["longitude_deg"],
+            )
             row: list[Union[float, str]] = []
-            for dest_airport, *dest_airport_coords in airport_coords:
+            for dest_airport, dest_coords in airport_coords.items():
+                dest_airport_coords = (
+                    dest_coords["latitude_deg"],
+                    dest_coords["longitude_deg"],
+                )
                 if source_airport == dest_airport:
                     row.append(0.00)
                     continue
 
                 miles: float = (
-                    great_circle(source_airport_coords, dest_airport_coords).miles
+                    great_circle(
+                        source_airport_coords,
+                        dest_airport_coords,
+                    ).miles
                     * 0.8689758
                 )
 
@@ -211,7 +285,6 @@ def calculate_distances(airports: dict) -> dict:
 """
 Format of timezone expected : "America/New_York" | "Europe/Paris"
 """
-
 
 """
 DOES NOT ACCOUNT FOR FULL GATES 
@@ -246,7 +319,7 @@ def get_time_of_city(iana_time_zone: str) -> datetime:
     return local_time
 
 
-def calculate_total_reachable_airport_populations(
+def calc_total_reachable_airport_populations(
     source_airport_name: str,
     distances: dict[str, dict[str, float]],
 ) -> float:
@@ -277,7 +350,7 @@ def calc_number_of_flyers(
             source_city_name,
             source_city_population,
         ) in ICAO_TO_METRO_POPULATION.items():
-            total_reachable_population = calculate_total_reachable_airport_populations(
+            total_reachable_population = calc_total_reachable_airport_populations(
                 source_city_name,
                 airport_distances,
             )
@@ -327,59 +400,45 @@ def fetch_airports() -> dict:
     return airline_data
 
 
-# FIXME:
-def calc_flight_time(source_airport: str, dest_airport: str) -> float:
-    # result = Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)
-    # initial_bearing = result['azi1']  # Initial bearing in degrees
-    # print(f"Bearing: {initial_bearing:.3f}°")
-    return -1.0
-    ...
-
-
-def calc_time_to_ascend_to_target_height(
-    speed_in_knots: float, target_height: float, ground_level: float = 0
-):
-    feet_per_minute: float = (
-        KNOTS_TO_FT_PER_MIN
-        * math.sin(math.radians(ANGLE_OF_ASCENSION_IN_DEGREES))
-        * speed_in_knots
-    )
-
-    time_to_ascend = (target_height - ground_level) / feet_per_minute
-    print(
-        f"Time to ascend to {target_height}ft from {ground_level}ft : {time_to_ascend} minutes"
-    )
-
-    return time_to_ascend
-
-
-"""
-Returns time in minutes converting from the 1knot = 1nm / hr
-"""
-
-
-def calc_time_to_descend_to_ten_thousand(
+def calc_time_and_distance_cruise_transition(
     cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
-) -> float:
-    time_to_descend = (
-        ((cruising_altitude - 10_000) * RATE_OF_DESCEND**-1) / SPEED_IN_KNOTS_TO_DESCEND
-    ) * 60
+    *,
+    direction: Literal["to", "from"],
+) -> tuple[float, float]:
+    height_ft: float = cruising_altitude - 10_000
 
-    print(
-        f"Time to descend from {cruising_altitude}ft to 10,000ft : {time_to_descend} minutes"
+    if direction == "to":
+        total_distance = feet_to_nautical_miles(
+            height_ft / math.sin(math.radians(AIRCRAFT_ASCEND_ANGLE_IN_DEGREES))
+        )
+        remaining_distance = total_distance - DISTANCE_TRAVELED_WHILE_ACCEL_TO_280KT
+
+        return (
+            total_distance,
+            TIME_TO_ACCEL_TO_280KT
+            + remaining_distance / RATE_OF_ASCEND_IN_MIN_AT_280KT,
+        )
+
+    # direction == "from" (descent): 3 NM per 1000 ft
+    total_distance = (height_ft / 1000.0) * 3.0
+
+    return (
+        total_distance,
+        total_distance / RATE_OF_ASCEND_IN_MIN_AT_280KT,
     )
-    return time_to_descend
 
 
-def calc_time_to_crusing(
+def calc_time_and_distance_to_cruising(
     cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
-):
-    height: float = cruising_altitude - 10_000
-    distance = height / math.sin(math.radians(AIRCRAFT_ASCEND_ANGLE_IN_DEGREES))
-    distance = feet_to_nautical_miles(distance)
+) -> tuple[float, float]:
+    return calc_time_and_distance_cruise_transition(cruising_altitude, direction="to")
 
 
-# print(calc_number_of_flyers(1_000_000, 10_000_000, 175_000_000))
+def calc_time_and_distance_from_cruising(
+    cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
+) -> tuple[float, float]:
+    return calc_time_and_distance_cruise_transition(cruising_altitude, direction="from")
+
 
 if __name__ == "__main__":
     main()
